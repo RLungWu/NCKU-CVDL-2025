@@ -19,7 +19,7 @@ from utils import preprocess_frame
 
 # ========== 配置 ===========
 # MODEL_PATH = "./ckpt_ppo/ppo_best_avg_distance_1677_ep_2556.pth"  # PPO 模型路徑
-MODEL_PATH = "/home/liang/Desktop/NCKU-CVDL-2025/SuperMario_SampleCode251218/ckpt_ppo/ppo_best_single_distance_1677_ep_2556.pth"
+MODEL_PATH = "/home/liang/Desktop/NCKU-CVDL-2025/SuperMario_SampleCode251218/ckpt_ppo/ppo_best_avg_distance_534_ep_10.pth"
 
 VISUALIZE = True
 FRAME_DELAY = 0.02              # 每幀延遲 (0.02 = 50 FPS)
