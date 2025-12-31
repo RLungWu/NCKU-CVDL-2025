@@ -13,22 +13,22 @@ REWARD_CONFIG = {
     # === 基本獎勵 ===
     'coin_reward': 10,              # 每個硬幣的獎勵
     'forward_reward': 1.0,          # 向前移動的獎勵 (per pixel)
-    'backward_penalty': 0.01,         # 向後移動的懲罰
+    'backward_penalty': -0.01,         # 向後移動的懲罰
     'jump_reward': 0.5,             # 跳躍時的 Y 移動獎勵 (per pixel)
     'score_reward_multiplier': 0.1, # 分數變化的獎勵倍率
     'flag_reward': 1000,            # 到達終點旗幟的獎勵
     
     # === 敵人相關獎勵 ===
     'enemy_approach_penalty': -5,   # 接近敵人的懲罰 (per danger level)
-    'enemy_jump_over_reward': 20,   # 跳過敵人的獎勵 (per danger level)
+    'enemy_jump_over_reward': 10,   # 跳過敵人的獎勵 (per danger level)
     'enemy_safe_distance_reward': 1,# 保持安全距離的獎勵
-    'kill_base_reward': 20,         # 擊殺敵人的基礎獎勵
-    'kill_combo_bonus': 10,         # 連殺加成 (per combo)
-    'kill_per_enemy_bonus': 10,     # 每個敵人的額外獎勵
-    'stomp_kill_bonus': 5,         # 踩殺的額外獎勵
+    'kill_base_reward': 10,         # 擊殺敵人的基礎獎勵
+    'kill_combo_bonus': 0,         # 連殺加成 (per combo)
+    'kill_per_enemy_bonus': 0,     # 每個敵人的額外獎勵
+    'stomp_kill_bonus': 0,         # 踩殺的額外獎勵
     
     # === 生存獎勵 ===
-    'survival_reward': 0.3,         # 每一步存活的獎勵
+    'survival_reward': 0.1,         # 每一步存活的獎勵
     'death_penalty': -100,          # 死亡懲罰
     'life_lost_penalty': -100,      # 失去生命的懲罰
     

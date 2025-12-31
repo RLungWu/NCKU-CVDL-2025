@@ -158,7 +158,9 @@ def train():
     episode_rewards = []
     episode_max_x_list = []         # 追蹤每個 episode 的最遠距離
     best_reward = -float('inf')
-    best_max_x = 0                  # 追蹤歷史最遠距離
+    best_max_x = 0                  # 追蹤歷史最遠單次距離
+    best_avg_distance = 0           # 🎯 追蹤最佳平均距離 (最重要！)
+    best_avg_reward = -float('inf') # 追蹤最佳平均獎勵
     epsilon = EPSILON_START
     
     # 初始化環境
@@ -206,45 +208,69 @@ def train():
                 episode_rewards.append(ep_reward)
                 episode_max_x_list.append(ep_max_x)
                 
-                # ========== 保存最佳模型 ==========
-                os.makedirs("ckpt_parallel", exist_ok=True)
+                # ========== 保存最佳模型 (專注於平均表現) ==========
+                os.makedirs("ckpt_parallel_average", exist_ok=True)
                 
-                # 1. 基於「最遠距離」保存 (最重要！)
+                # 計算移動平均 (最近 50 個 episode)
+                if len(episode_max_x_list) >= 50:
+                    current_avg_dist = np.mean(episode_max_x_list[-50:])
+                    current_avg_reward = np.mean(episode_rewards[-50:])
+                    
+                    # 1. 🎯 主要：基於「平均距離」保存 (最重要！穩定性指標)
+                    if current_avg_dist > best_avg_distance:
+                        best_avg_distance = current_avg_dist
+                        # 刪除舊的平均距離模型
+                        for old_model in os.listdir("ckpt_parallel_average"):
+                            if old_model.startswith("best_avg_distance_"):
+                                try:
+                                    os.remove(os.path.join("ckpt_parallel_average", old_model))
+                                except:
+                                    pass
+                        model_path = f"ckpt_parallel_average/best_avg_distance_{int(best_avg_distance)}_ep_{episode_count}.pth"
+                        torch.save(dqn.q_net.state_dict(), model_path)
+                        print(f"\n📊 New best AVG distance: {best_avg_distance:.0f} (last 50 eps)")
+                    
+                    # 2. 基於「平均獎勵」保存
+                    if current_avg_reward > best_avg_reward:
+                        best_avg_reward = current_avg_reward
+                        # 刪除舊的平均獎勵模型
+                        for old_model in os.listdir("ckpt_parallel_average"):
+                            if old_model.startswith("best_avg_reward_"):
+                                try:
+                                    os.remove(os.path.join("ckpt_parallel_average", old_model))
+                                except:
+                                    pass
+                        model_path = f"ckpt_parallel_average/best_avg_reward_{int(best_avg_reward)}_ep_{episode_count}.pth"
+                        torch.save(dqn.q_net.state_dict(), model_path)
+                        print(f"\n💰 New best AVG reward: {best_avg_reward:.0f} (last 50 eps)")
+                
+                # 3. 記錄單次最佳 (僅供參考，不作為主要指標)
                 if ep_max_x > best_max_x:
                     best_max_x = ep_max_x
-                    model_path = f"ckpt_parallel/best_distance_{int(best_max_x)}_ep_{episode_count}.pth"
-                    torch.save(dqn.q_net.state_dict(), model_path)
-                    print(f"\n🏃 New best distance: {best_max_x} - Model saved: {model_path}")
+                    # 不再保存單次最佳模型，只記錄
                 
-                # 2. 基於「遊戲獎勵」保存
-                if ep_reward > best_reward:
-                    best_reward = ep_reward
-                    model_path = f"ckpt_parallel/best_reward_{int(best_reward)}_ep_{episode_count}.pth"
+                # 4. 每 200 episode 保存一次 checkpoint
+                if episode_count > 0 and episode_count % 200 == 0:
+                    model_path = f"ckpt_parallel_average/checkpoint_ep_{episode_count}.pth"
                     torch.save(dqn.q_net.state_dict(), model_path)
-                    print(f"\n� New best reward: {best_reward} - Model saved: {model_path}")
-                
-                # 3. 每 100 episode 保存一次 checkpoint
-                if episode_count > 0 and episode_count % 100 == 0:
-                    model_path = f"ckpt_parallel/checkpoint_ep_{episode_count}.pth"
-                    torch.save(dqn.q_net.state_dict(), model_path)
-                    print(f"\n📁 Checkpoint saved: {model_path}")
+                    print(f"\n📁 Checkpoint saved: ep_{episode_count}")
                 
                 # 重置
                 current_rewards[i] = 0
                 current_max_x[i] = 0
                 reset_max_x()
                 reset_enemy_tracking()
-                reset_hole_tracking()   # 重置坑洞追蹤
+                reset_hole_tracking()
                 episode_count += 1
                 pbar.update(1)
                 
-                # 更新進度條
-                avg_reward = np.mean(episode_rewards[-100:]) if episode_rewards else 0
-                avg_max_x = np.mean(episode_max_x_list[-100:]) if episode_max_x_list else 0
+                # 更新進度條 (專注於平均值)
+                avg_reward = np.mean(episode_rewards[-50:]) if len(episode_rewards) >= 50 else np.mean(episode_rewards) if episode_rewards else 0
+                avg_max_x = np.mean(episode_max_x_list[-50:]) if len(episode_max_x_list) >= 50 else np.mean(episode_max_x_list) if episode_max_x_list else 0
                 pbar.set_postfix({
-                    'avg_reward': f'{avg_reward:.0f}',
                     'avg_dist': f'{avg_max_x:.0f}',
-                    'best_dist': f'{best_max_x:.0f}',
+                    'best_avg': f'{best_avg_distance:.0f}',
+                    'best_single': f'{best_max_x:.0f}',
                     'ε': f'{epsilon:.3f}'
                 })
         

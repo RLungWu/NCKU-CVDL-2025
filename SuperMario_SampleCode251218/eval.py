@@ -16,7 +16,7 @@ from DQN import DQN
 # MODEL_PATH = os.path.join("ckpt_test","step_18_reward_536_custom_586.pth")        # 模型權重檔案的存放路徑
 # MODEL_PATH = "ckpt_parallel/best_reward_2878_ep_597.pth"
 # MODEL_PATH = "ckpt_parallel/best_reward_2953_ep_105.pth"
-MODEL_PATH = "/home/liang/Desktop/NCKU-CVDL-2025/SuperMario_SampleCode251218/ckpt_parallel/best_distance_3161_ep_980.pth"  # 🏆 通關模型！
+MODEL_PATH = "/home/liang/Desktop/NCKU-CVDL-2025/SuperMario_SampleCode251218/ckpt_parallel_average/best_avg_distance_876_ep_159.pth"  # 🏆 通關模型！
 
 #env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0')                     # 建立《超級瑪利歐兄弟》的遊戲環境(第1個世界的第1關)
 

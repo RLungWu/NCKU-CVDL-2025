@@ -209,3 +209,4 @@ __marimo__/
 ckpt_parallel/
 ckpt_test/
 ckpt_ppo/
+ckpt_parallel_average/
