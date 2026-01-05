@@ -12,7 +12,7 @@ from gym_super_mario_bros.actions import SIMPLE_MOVEMENT         #從 gym_super_
                                                                  #簡化動作空間 NES 控制器有 8 個按鍵（上下左右、A、B、Select、Start），可能的按鍵組合數非常大
 
 from utils import preprocess_frame                               #用於對遊戲的畫面進行預處理，例如灰階化、調整大小等，將其轉換為適合神經網路輸入的格式
-from reward import calculate_smart_reward, reset_max_x          #導入智慧獎勵函數和重置函數
+from reward import *                                             #模組中導入所有函式，這些函式用於設計和計算自定義獎勵（例如根據 Mario 的硬幣數量、水平位移等來計算獎勵）。
 from model import CustomCNN                                      #自定義的卷積神經網路模型，用於處理遊戲畫面並生成動作決策
 from DQN import DQN, ReplayMemory                                #用於執行強化學習的主要邏輯 DQN模組中導入回放記憶體，用於存儲和抽取遊戲的狀態、動作、獎勵等樣本，提升訓練穩定性。
 
@@ -79,7 +79,6 @@ cumulative_reward = 0                           # 當前時間步的總累積獎
 
 #=======================訓練開始============================
 for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  #主訓練迴圈，進行TOTAL_TIMESTEPS次迭代
-    reset_max_x()                                                                #重置障礙物追蹤
     state = env.reset()                                                         #重置遊戲環境，獲取初始狀態
     state = preprocess_frame(state)                                             #使用preprocess_frame 將畫面處理為灰階、縮放為84x84
     state = np.expand_dims(state, axis=0)                                       #新增一個維度，適配模型輸入
@@ -95,7 +94,6 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         "life": 3  # Default initial number of lives is 3 (int).
     }
 
-    cumulative_custom_reward = 0                                                  #自定義獎勵總和
     cumulative_reward = 0 
     stagnation_time = 0                                                           #stagnation_time記錄遊戲角色在水平方向的停滯時間
     #開始一個回合的遊戲循環
@@ -108,15 +106,7 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         next_state = preprocess_frame(next_state)
         next_state = np.expand_dims(next_state, axis=0)
 
-        cumulative_reward += reward   #更新累積獎勵
-
-        # ===========================調用 reward.py 中的智慧獎勵函數
-        # 使用 RAM 讀取敵人位置，計算更聰明的獎勵
-        custom_reward = calculate_smart_reward(env, info, reward, prev_info)
-        # ===========================
-        cumulative_custom_reward += custom_reward // 1
-
-
+        cumulative_reward += final_reward(info, reward, prev_info)   #更新累積獎勵
 
         # ===========================Check for x_pos stagnation  如果角色的水平位置未改變超過MAX_STAGNATION_STEPS則強制結束本局遊戲
         if info["x_pos"] == prev_info["x_pos"]:
@@ -129,8 +119,8 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         
         
         #===========================Store transition in memory 將狀態轉移 (state, action, reward, next_state, done) 存入記憶體
-        #memory.push(state, action, custom_reward //1, next_state, done)      #使用自訂義獎勵
-        memory.push(state, action, reward, next_state, done)                  #使用其預設好的獎勵
+        memory.push(state, action, cumulative_reward //1, next_state, done)      #使用自訂義獎勵
+        #memory.push(state, action, final_reward(info, reward, prev_info), next_state, done)                  #使用其預設好的獎勵
         #更新當前狀態
         state = next_state
 
@@ -158,16 +148,22 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
             env.render()
 
     # Print cumulative reward for the current timestep
-    print(f"Timestep {timestep} - Total Reward: {cumulative_reward} - Total Custom Reward: {cumulative_custom_reward}")
+    print(f"Timestep {timestep} - Total Reward: {cumulative_reward}")
 
     #如果當前累積獎勵超過歷史最佳值，保存模型的權重 每次超過最佳值就會保留一次
-    #要改成自定義獎勵
     if cumulative_reward > best_reward:
         best_reward = cumulative_reward
-        os.makedirs("ckpt_test", exist_ok=True)
-        #命名邏輯是採第幾步+最佳獎勵+自訂義獎勵的累積總合
-        model_path = os.path.join("ckpt_test",f"step_{timestep}_reward_{int(best_reward)}_custom_{int(cumulative_custom_reward)}.pth")
-        torch.save(dqn.q_net.state_dict(), model_path)
-        print(f"Model saved: {model_path}")
+        if reward.EXTREME_MODE:
+            os.makedirs("liang_test_extreme", exist_ok=True)
+            #命名邏輯是採第幾步+最佳獎勵+自訂義獎勵的累積總合
+            model_path = os.path.join("liang_test_extreme",f"step_{timestep}_reward_{int(best_reward)}.pth")
+            torch.save(dqn.q_net.state_dict(), model_path)
+            print(f"Model saved: {model_path}")
+        else:
+            os.makedirs("liang_test", exist_ok=True)
+            #命名邏輯是採第幾步+最佳獎勵+自訂義獎勵的累積總合
+            model_path = os.path.join("liang_test",f"step_{timestep}_reward_{int(best_reward)}.pth")
+            torch.save(dqn.q_net.state_dict(), model_path)
+            print(f"Model saved: {model_path}")
 
 env.close()

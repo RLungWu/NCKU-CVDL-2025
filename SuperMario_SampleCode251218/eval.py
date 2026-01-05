@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 from tqdm import tqdm
-import os
-import time  # 用於控制遊戲速度
 
 import gym_super_mario_bros
 from nes_py.wrappers import JoypadSpace
@@ -13,10 +11,7 @@ from model import CustomCNN
 from DQN import DQN
 
 # ========== Config ===========
-# MODEL_PATH = os.path.join("ckpt_test","step_18_reward_536_custom_586.pth")        # 模型權重檔案的存放路徑
-# MODEL_PATH = "ckpt_parallel/best_reward_2878_ep_597.pth"
-# MODEL_PATH = "ckpt_parallel/best_reward_2953_ep_105.pth"
-MODEL_PATH = "/home/liang/Desktop/NCKU-CVDL-2025/SuperMario_SampleCode251218/ckpt_parallel_average/best_avg_distance_876_ep_159.pth"  # 🏆 通關模型！
+MODEL_PATH = os.path.join("ckpt_test","step_18_reward_536_custom_586.pth")        # 模型權重檔案的存放路徑
 
 #env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0')                     # 建立《超級瑪利歐兄弟》的遊戲環境(第1個世界的第1關)
 
@@ -60,10 +55,7 @@ OBS_SHAPE = (1, 84, 84)                                                     # �
 N_ACTIONS = len(SIMPLE_MOVEMENT) 
 
 VISUALIZE = True                                                            # 是否在每回合中顯示遊戲畫面
-FRAME_DELAY = 0.02                                                          # 每幀延遲秒數 (0.02 = 50 FPS, 0.05 = 20 FPS, 0.1 = 10 FPS)
 TOTAL_EPISODES = 10                                                         # 測試回合的總數
-TEST_EPSILON = 0.05                                                         # 測試時的小探索率，避免卡住
-USE_SOFTMAX_SAMPLING = True                                                 # 是否使用 softmax 抽樣（與訓練一致）
 
 # ========== Initialize DQN =========== 
 dqn = DQN( 
@@ -99,28 +91,15 @@ for episode in range(1, TOTAL_EPISODES + 1):
                                                                           # 符合 CNN 輸入要求：[batch, channels, height, width]
     done = False
     total_reward = 0
-    max_x_pos = 0                                                             # 追蹤最遠距離
 
     while not done:
-        # 小機率探索，避免卡住
-        if np.random.rand() < TEST_EPSILON:
-            action = np.random.randint(N_ACTIONS)
-        else:
-            # Take action using the trained policy
-            state_tensor = torch.tensor(state, dtype=torch.float32, device=device)
-            with torch.no_grad():
-                q_values = dqn.q_net(state_tensor)
-                
-                if USE_SOFTMAX_SAMPLING:
-                    # 使用 softmax 抽樣（與訓練一致）
-                    action_probs = torch.softmax(q_values, dim=1)
-                    action_dist = torch.distributions.Categorical(action_probs)
-                    action = action_dist.sample().item()
-                else:
-                    # 使用 argmax（純 greedy）
-                    action = q_values.argmax(dim=1).item()
-        
-        next_state, reward, done, info = env.step(action)
+        # Take action using the trained policy
+        state_tensor = torch.tensor(state, dtype=torch.float32, device=device)    # 將 NumPy 格式的 state 轉換為 PyTorch 的 tensor 格式
+        with torch.no_grad():                                                       
+            action_probs = torch.softmax(dqn.q_net(state_tensor), dim=1)          # 使用訓練好的 [Q-net] 計算當前狀態的動作分數，並透過 Softmax 轉換為動作機率分佈，輸出範圍為[0,1]，總合為1            
+                                                                                                                                            
+            action = torch.argmax(action_probs, dim=1).item()                     # 選擇機率最高的動作作為當下策略的 action
+        next_state, reward, done, info = env.step(action)                         # 根據選擇的 action 與環境互動，獲取 next_state、reward、是否終止
 
         # Preprocess next state
         next_state = preprocess_frame(next_state)
@@ -129,13 +108,11 @@ for episode in range(1, TOTAL_EPISODES + 1):
 
         # Accumulate rewards
         total_reward += reward
-        max_x_pos = max(max_x_pos, info.get('x_pos', 0))                          # 追蹤最遠距離
         state = next_state
 
         if VISUALIZE:                                                             # 如果 VISUALIZE=True，則用 env.render() 顯示環境當下的 state
             env.render()
-            time.sleep(FRAME_DELAY)                                               # 延遲讓畫面慢一點
 
-    print(f"Episode {episode}/{TOTAL_EPISODES} - Reward: {total_reward} - Max X: {max_x_pos}")  # 顯示獎勵和最遠距離
+    print(f"Episode {episode}/{TOTAL_EPISODES} - Total Reward: {total_reward}")   # 印出當下的進度 episode/總回合數 和該回合的 total_reward
 
 env.close()
