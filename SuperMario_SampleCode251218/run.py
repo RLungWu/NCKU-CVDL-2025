@@ -12,7 +12,8 @@ from gym_super_mario_bros.actions import SIMPLE_MOVEMENT         #從 gym_super_
                                                                  #簡化動作空間 NES 控制器有 8 個按鍵（上下左右、A、B、Select、Start），可能的按鍵組合數非常大
 
 from utils import preprocess_frame                               #用於對遊戲的畫面進行預處理，例如灰階化、調整大小等，將其轉換為適合神經網路輸入的格式
-from reward import *                                             #模組中導入所有函式，這些函式用於設計和計算自定義獎勵（例如根據 Mario 的硬幣數量、水平位移等來計算獎勵）。
+from reward import *  
+from reward import EXTREME_MODE                                           #模組中導入所有函式，這些函式用於設計和計算自定義獎勵（例如根據 Mario 的硬幣數量、水平位移等來計算獎勵）。
 from model import CustomCNN                                      #自定義的卷積神經網路模型，用於處理遊戲畫面並生成動作決策
 from DQN import DQN, ReplayMemory                                #用於執行強化學習的主要邏輯 DQN模組中導入回放記憶體，用於存儲和抽取遊戲的狀態、動作、獎勵等樣本，提升訓練穩定性。
 
@@ -40,18 +41,25 @@ env = JoypadSpace(env, SIMPLE_MOVEMENT)
 print("Final env:", env)
 
 #========= basic train config==============================================
-LR = 0.00001
-BATCH_SIZE = 32                 #達到batch size更新主網路參數 達到50次更新目標網路的參數
-GAMMA = 0.99                    #控制模型對長期獎勵和短期獎勵的權衡 gamma靠近1 模型更重視長期獎勵
-MEMORY_SIZE = 10000             #用來儲存，遊戲過程中的記錄 如果存超過了 會刪除最早進來的
-EPSILON_END = 0.3               #在訓練過程中，會逐漸從探索（隨機選擇動作）轉向利用（選擇模型預測的最佳動作）。
-                                #EPSILON的值會隨著訓練進展逐漸下降，直到達到此最小值0.3
-                                #即訓練後期仍保留 30% 的探索概率，避免模型陷入局部最優解
-TARGET_UPDATE = 50              #每隔幾回合去更新目標網路的權重
-TOTAL_TIMESTEPS = 1000          #總訓練的回合數
-VISUALIZE = True                #是否在訓練過程中渲染遊戲畫面 顯示遊戲畫面
-MAX_STAGNATION_STEPS = 500       # Max steps without x_pos change 500
+LR = 0.00025                    # 學習率（DQN 經典值）
+BATCH_SIZE = 64                 # 批次大小
+GAMMA = 0.99                    # ⚡ 提高！更重視長期獎勵（學會跳過敵人）
+MEMORY_SIZE = 50000             # 記憶體大小
+EPSILON_START = 1.0             # ⚡ 新增：初始探索率 100%
+EPSILON_END = 0.1               # ⚡ 降低：最終探索率 10%
+EPSILON_DECAY = 0.995           # ⚡ 新增：每回合探索率衰減
+TARGET_UPDATE = 100             # 目標網路更新頻率
+TOTAL_TIMESTEPS = 2000          # ⚡ 增加訓練回合
+VISUALIZE = False               # 是否渲染遊戲畫面
+MAX_STAGNATION_STEPS = 300      # 停滯步數上限
 device = torch.device("cuda")
+
+# ⚡ 加速訓練設定
+FRAME_SKIP = 2                  # ⚡ 降低！讓 Mario 有更多反應時間跳過敵人
+TRAIN_FREQUENCY = 4             # 每 N 步訓練一次
+
+
+
 
 
 # ========================DQN Initialization==========================================
@@ -64,15 +72,16 @@ dqn = DQN(                                      #初始化 DQN agent
     action_dim=n_actions,                       #動作空間大小
     learning_rate=LR,                           #學習率
     gamma=GAMMA,                                #折扣因子，用於計算未來獎勵
-    epsilon=EPSILON_END,                        #初始探索率
+    epsilon=EPSILON_START,                      # ⚡ 使用初始探索率 1.0
     target_update=TARGET_UPDATE,                #目標網路更新頻率
     device=device
 )
 
 memory = ReplayMemory(MEMORY_SIZE)              #創建經驗回放記憶體，用於存儲狀態轉移
 step = 0                                        #記錄總步數
-best_reward = -float('inf')                     # 儲存最佳累積獎勵Track the best reward in each SAVE_INTERVAL  
-cumulative_reward = 0                           # 當前時間步的總累積獎勵Track cumulative reward for the current timestep
+best_reward = -float('inf')                     # 儲存最佳累積獎勵
+cumulative_reward = 0                           # 當前時間步的總累積獎勵
+current_epsilon = EPSILON_START                 # ⚡ 追蹤當前探索率
 
 
 
@@ -99,14 +108,22 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
     #開始一個回合的遊戲循環
     while not done:
         action = dqn.take_action(state)                                           #輸入目前狀態，交給DQN去做下一步
-        next_state, reward, done, info = env.step(action)                         #執行動作並從環境中獲取下一狀態、回報、遊戲結束標記、以及遊戲資訊 
-       
+        
+        # ⚡ Frame Skip: 重複執行同一動作 N 次，累積獎勵
+        frame_reward = 0
+        for _ in range(FRAME_SKIP):
+            next_state, reward, done, info = env.step(action)
+            frame_reward += reward
+            if done:
+                break
+        reward = frame_reward  # 使用累積的獎勵
        
         # preprocess image state 將下一狀態進行預處理並調整為適合模型的形狀
         next_state = preprocess_frame(next_state)
         next_state = np.expand_dims(next_state, axis=0)
 
         cumulative_reward += final_reward(info, reward, prev_info)   #更新累積獎勵
+
 
         # ===========================Check for x_pos stagnation  如果角色的水平位置未改變超過MAX_STAGNATION_STEPS則強制結束本局遊戲
         if info["x_pos"] == prev_info["x_pos"]:
@@ -125,7 +142,8 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         state = next_state
 
         #==============================Train DQN 當記憶體中樣本數量達到批次大小時，從記憶體中隨機抽取一批樣本進行網路更新
-        if len(memory) >= BATCH_SIZE:
+        # ⚡ 每 TRAIN_FREQUENCY 步才訓練一次，減少訓練開銷
+        if len(memory) >= BATCH_SIZE and step % TRAIN_FREQUENCY == 0:
             batch = memory.sample(BATCH_SIZE)
 
             state_dict = {                                       #將這些數據打包為字典格式，方便傳遞給模型進行訓練
@@ -137,9 +155,6 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
             }
             dqn.train_per_step(state_dict)                       #train_per_step是DQN中的方法，用於計算損失並更新神經網路的權重
 
-        # Update epsilon
-        dqn.epsilon = EPSILON_END               #訓練前就設定:代理的探索能力會立即降低，可能在策略還不完善時過早專注於利用，會影響最終的學習效果
-        
         #================================更新狀態訊息
         prev_info = info
         step += 1
@@ -147,13 +162,17 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         if VISUALIZE:                                   #渲染當前遊戲畫面
             env.render()
 
+    # ⚡ Epsilon Decay: 每回合結束後降低探索率
+    current_epsilon = max(EPSILON_END, current_epsilon * EPSILON_DECAY)
+    dqn.epsilon = current_epsilon
+
     # Print cumulative reward for the current timestep
-    print(f"Timestep {timestep} - Total Reward: {cumulative_reward}")
+    print(f"Timestep {timestep} - Reward: {cumulative_reward:.0f} - Epsilon: {current_epsilon:.3f}")
 
     #如果當前累積獎勵超過歷史最佳值，保存模型的權重 每次超過最佳值就會保留一次
     if cumulative_reward > best_reward:
         best_reward = cumulative_reward
-        if reward.EXTREME_MODE:
+        if EXTREME_MODE:
             os.makedirs("liang_test_extreme", exist_ok=True)
             #命名邏輯是採第幾步+最佳獎勵+自訂義獎勵的累積總合
             model_path = os.path.join("liang_test_extreme",f"step_{timestep}_reward_{int(best_reward)}.pth")

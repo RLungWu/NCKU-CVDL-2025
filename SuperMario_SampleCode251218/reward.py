@@ -10,47 +10,71 @@ import cv2
 # Adjust this table to modify all reward/penalty values
 # ===============================================================
 
-# 🔥 切換模式：True = 極端模式, False = 正常模式
+# 切換模式：True = 極端模式, False = 正常模式
 EXTREME_MODE = True
 
-# ===== 正常模式 (Normal Mode) =====
+# ===== 正常模式 (Normal Mode) - 經驗調優版 =====
+# 設計原則：
+#   1. 前進是最重要的目標 → forward_reward 最高
+#   2. 避免矛盾信號 → fall_penalty 不能太高（否則不敢跳）
+#   3. 死亡是最嚴重的 → death_penalty 最大
+#   4. 減少噪音 → no_score_penalty 設為 0
 NORMAL_CONFIG = {
-    "coin_reward": 5,               # 收集硬幣獎勵
-    "jump_reward": 10,              # 跳躍獎勵
-    "forward_reward": 10,           # 前進獎勵
-    "score_reward": 8,              # 擊敗敵人獎勵
-    "flag_reward": 100,             # 終點獎勵
-    "life_bonus": 50,               # 1UP獎勵
-    "fall_penalty": -10,            # 下落懲罰
-    "backward_penalty": -10,        # 後退懲罰
-    "no_score_penalty": -10,        # 無得分懲罰
-    "death_penalty": -100,          # 死亡懲罰
-    "stagnation_penalty": -5,       # 停滯懲罰
-    "time_waste_penalty": -5,       # 時間浪費懲罰
-    "time_waste_threshold": 3,
+    # === Core Reward ===
+    "forward_reward": 25,          
+    "flag_reward": 500,            
+    
+    # === Support Reward ===
+    "jump_reward": 5,              
+    "coin_reward": 10,              
+    "score_reward": 15,             
+    "life_bonus": 100,            
+    
+    # === Core Penalty ===
+    "death_penalty": -200,          
+    "backward_penalty": -20,        
+    "stagnation_penalty": -15,      
+    
+    # === Light Penalty ===
+    "fall_penalty": -5,             
+    "no_score_penalty": 0,         
+    "time_waste_penalty": -3,      
+    "time_waste_threshold": 5,     
 }
 
-# ===== 極端模式 (EXTREME Mode) - 更強烈的獎懲訊號 =====
+
+# ===== Extreme Mode - Strategy Amplification Version =====
+# Design Principles:
+#   1. Not simply x10, but 'strategy amplification'
+#   2. Amplify core signals more, reduce or remove noise signals
+#   3. Let AI learn 'always move right + never die' faster
 EXTREME_CONFIG = {
-    "coin_reward": 50,              # 硬幣獎勵 x10
-    "jump_reward": 30,              # 跳躍獎勵 x3
-    "forward_reward": 50,           # 前進獎勵 x5 (最重要!)
-    "score_reward": 40,             # 擊敗敵人 x5
-    "flag_reward": 1000,            # 終點獎勵 x10
-    "life_bonus": 200,              # 1UP獎勵 x4
-    "fall_penalty": -20,            # 下落懲罰 x2
-    "backward_penalty": -50,        # 後退懲罰 x5 (強烈阻止後退!)
-    "no_score_penalty": 0,          # 不懲罰無得分 (減少噪音)
-    "death_penalty": -500,          # 死亡懲罰 x5
-    "stagnation_penalty": -30,      # 停滯懲罰 x6 (強烈阻止原地不動!)
-    "time_waste_penalty": -20,      # 時間浪費懲罰 x4
-    "time_waste_threshold": 2,      # 更嚴格的時間閾值
+    # === Core Reward === (Timex 4)
+    "forward_reward": 100,          
+    "flag_reward": 2000,            
+    
+    # === Support Reward === (Timex 2 ~ 3)
+    "jump_reward": 10,              
+    "coin_reward": 20,              
+    "score_reward": 30,             
+    "life_bonus": 300,              
+    
+    # === Core Penalty === (Timex 2 ~ 3)
+    "death_penalty": -500,          
+    "backward_penalty": -80,        
+    "stagnation_penalty": -50,      
+    
+    # === Light Penalty === (Timex 2 ~ 3)
+    "fall_penalty": -5,             
+    "no_score_penalty": 0,          
+    "time_waste_penalty": -10,      
+    "time_waste_threshold": 3,      
 }
 
-# 根據模式選擇配置
+
 REWARD_CONFIG = EXTREME_CONFIG if EXTREME_MODE else NORMAL_CONFIG
 
-print(f"🎮 Reward Mode: {'🔥 EXTREME' if EXTREME_MODE else '📊 NORMAL'}")
+print(f"Reward Mode: {'EXTREME' if EXTREME_MODE else 'NORMAL'}")
 
 # Env state 
 # info = {

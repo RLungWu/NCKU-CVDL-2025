@@ -210,3 +210,7 @@ ckpt_parallel/
 ckpt_test/
 ckpt_ppo/
 ckpt_parallel_average/
+liang_test/
+liang_test_extreme/
+mario_eval.mp4
+mario_eval_extreme.mp4

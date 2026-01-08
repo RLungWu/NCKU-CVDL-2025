@@ -1,6 +1,9 @@
 import numpy as np
 import torch
 from tqdm import tqdm
+import time
+import cv2  # 用於錄製影片
+import os
 
 import gym_super_mario_bros
 from nes_py.wrappers import JoypadSpace
@@ -11,37 +14,28 @@ from model import CustomCNN
 from DQN import DQN
 
 # ========== Config ===========
-MODEL_PATH = os.path.join("ckpt_test","step_18_reward_536_custom_586.pth")        # 模型權重檔案的存放路徑
+# 選擇最佳模型
+# MODEL_PATH = os.path.join("liang_test_extreme", "step_781_reward_48806.pth")
+MODEL_PATH = os.path.join("liang_test","step_366_reward_14087.pth")
+# MODEL_PATH = os.path.join("ckpt_test", "step_1_reward_-441.pth")   
 
-#env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0')                     # 建立《超級瑪利歐兄弟》的遊戲環境(第1個世界的第1關)
 
-# SIMPLE_MOVEMENT可自行定義 以下為自訂範例:
-# SIMPLE_MOVEMENT = [
-#    # ["NOOP"],       # Do nothing.
-#     ["right"],      # Move right.
-#     ["right", "A"], # Move right and jump.
-#     ["right", "B"], # Move right and run.
-#     ["right", "A", "B"], # Move right, run, and jump.
-#    # ["A"],          # Jump straight up.
-#     ["left"],       # Move left.
-#     ["left", "A"], # Move right and jump.
-#     ["left", "B"], # Move right and run.
-#     ["left", "A", "B"], # Move right, run, and jump.
-# ]
-
-#env = JoypadSpace(env, SIMPLE_MOVEMENT) 
+# 影片輸出設定
+RECORD_VIDEO = True                     # 是否錄製影片
+VIDEO_OUTPUT_PATH = "mario_eval.mp4"    # 輸出影片檔名
+VIDEO_FPS = 30                          # 影片幀率
 
 import gym
 from gym.wrappers import StepAPICompatibility
 
-# 1) make（這裡可能會自動包 TimeLimit）
+# 1) make
 env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0')
 
-# 2) 🔑 拆掉 TimeLimit（不拆一定炸 expected 5 got 4）
+# 2) 拆掉 TimeLimit
 if isinstance(env, gym.wrappers.TimeLimit):
     env = env.env
 
-# 3) 固定成舊 step API（回 4-tuple）
+# 3) 固定成舊 step API
 env = StepAPICompatibility(env, output_truncation_bool=False)
 
 # 4) 再包 JoypadSpace
@@ -49,13 +43,12 @@ env = JoypadSpace(env, SIMPLE_MOVEMENT)
 
 print("Final env:", env)
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")       # 檢查是否有可用的 GPU，否則使用 CPU 作為運算設備
-OBS_SHAPE = (1, 84, 84)                                                     # 遊戲畫面轉換為 (1, 84, 84) 的灰階圖像
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+OBS_SHAPE = (1, 84, 84)
 N_ACTIONS = len(SIMPLE_MOVEMENT) 
 
-VISUALIZE = True                                                            # 是否在每回合中顯示遊戲畫面
-TOTAL_EPISODES = 10                                                         # 測試回合的總數
+VISUALIZE = False                       # 關閉螢幕顯示（避免 pyglet 錯誤）
+TOTAL_EPISODES = 1
 
 # ========== Initialize DQN =========== 
 dqn = DQN( 
@@ -64,55 +57,85 @@ dqn = DQN(
     action_dim=N_ACTIONS,
     learning_rate=0.0001,  
     gamma=0.99,          
-    epsilon=0.0,                   # 設為 0.0 表示完全利用當下的策略
-    target_update=1000,            # target [Q-net] 更新的頻率
+    epsilon=0.0,
+    target_update=1000,
     device=device
 )
 
 # ========== 載入模型權重 =========== 
 if os.path.exists(MODEL_PATH):
-    try:                                                                  # 檢查模型檔案是否存在：
-        model_weights = torch.load(MODEL_PATH, map_location=device)       #  若存在，嘗試載入模型權重
-        dqn.q_net.load_state_dict(model_weights)                          #    載入成功，應用到模型
-        dqn.q_net.eval()                                                  #    載入失敗，輸出具體的錯誤資訊(錯誤資訊存在e中)
-        print(f"Model loaded successfully from {MODEL_PATH}")             #  若不存在，則FileNotFoundError
+    try:
+        model_weights = torch.load(MODEL_PATH, map_location=device)
+        dqn.q_net.load_state_dict(model_weights)
+        dqn.q_net.eval()
+        print(f"Model loaded successfully from {MODEL_PATH}")
     except Exception as e:
         print(f"Failed to load model weights: {e}")
         raise
 else:
     raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
+# ========== 初始化影片錄製 ===========
+video_writer = None
+if RECORD_VIDEO:
+    # 取得遊戲畫面尺寸
+    sample_frame = env.reset()
+    height, width = sample_frame.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(VIDEO_OUTPUT_PATH, fourcc, VIDEO_FPS, (width, height))
+    print(f"📹 Recording video to: {VIDEO_OUTPUT_PATH}")
+    print(f"   Resolution: {width}x{height}, FPS: {VIDEO_FPS}")
+
 # ========== Evaluation Loop ===========
 for episode in range(1, TOTAL_EPISODES + 1):
-    state = env.reset()                                                   # 重置環境到初始狀態，並獲取環境的 state 初始值
+    state = env.reset()
+    
+    # 錄製第一幀
+    if RECORD_VIDEO and video_writer is not None:
+        frame_rgb = cv2.cvtColor(state, cv2.COLOR_RGB2BGR)
+        video_writer.write(frame_rgb)
+    
     state = preprocess_frame(state)
-    state = np.expand_dims(state, axis=0)                                 # 新增 channel dimension ( [H, W] to [1, H, W] )
-    state = np.expand_dims(state, axis=0)                                 # 新增 batch dimension ( [1, H, W] to [1, 1, H, W] )
-                                                                          # 符合 CNN 輸入要求：[batch, channels, height, width]
+    state = np.expand_dims(state, axis=0)
+    state = np.expand_dims(state, axis=0)
+    
     done = False
     total_reward = 0
+    frame_count = 0
 
     while not done:
         # Take action using the trained policy
-        state_tensor = torch.tensor(state, dtype=torch.float32, device=device)    # 將 NumPy 格式的 state 轉換為 PyTorch 的 tensor 格式
-        with torch.no_grad():                                                       
-            action_probs = torch.softmax(dqn.q_net(state_tensor), dim=1)          # 使用訓練好的 [Q-net] 計算當前狀態的動作分數，並透過 Softmax 轉換為動作機率分佈，輸出範圍為[0,1]，總合為1            
-                                                                                                                                            
-            action = torch.argmax(action_probs, dim=1).item()                     # 選擇機率最高的動作作為當下策略的 action
-        next_state, reward, done, info = env.step(action)                         # 根據選擇的 action 與環境互動，獲取 next_state、reward、是否終止
+        state_tensor = torch.tensor(state, dtype=torch.float32, device=device)
+        with torch.no_grad():
+            action_probs = torch.softmax(dqn.q_net(state_tensor), dim=1)
+            action = torch.argmax(action_probs, dim=1).item()
+        next_state, reward, done, info = env.step(action)
+
+        # 錄製每一幀
+        if RECORD_VIDEO and video_writer is not None:
+            frame_rgb = cv2.cvtColor(next_state, cv2.COLOR_RGB2BGR)
+            video_writer.write(frame_rgb)
+            frame_count += 1
 
         # Preprocess next state
-        next_state = preprocess_frame(next_state)
-        next_state = np.expand_dims(next_state, axis=0)                           # 新增 channel dimension
-        next_state = np.expand_dims(next_state, axis=0)                           # 新增 batch dimension
+        next_state_processed = preprocess_frame(next_state)
+        next_state_processed = np.expand_dims(next_state_processed, axis=0)
+        next_state_processed = np.expand_dims(next_state_processed, axis=0)
 
         # Accumulate rewards
         total_reward += reward
-        state = next_state
+        state = next_state_processed
 
-        if VISUALIZE:                                                             # 如果 VISUALIZE=True，則用 env.render() 顯示環境當下的 state
-            env.render()
+        # 顯示進度
+        if frame_count % 100 == 0:
+            print(f"  Frame: {frame_count}, x_pos: {info.get('x_pos', 'N/A')}, Reward: {total_reward:.0f}")
 
-    print(f"Episode {episode}/{TOTAL_EPISODES} - Total Reward: {total_reward}")   # 印出當下的進度 episode/總回合數 和該回合的 total_reward
+    print(f"Episode {episode}/{TOTAL_EPISODES} - Total Reward: {total_reward} - Frames: {frame_count}")
 
+# ========== 關閉資源 ===========
 env.close()
+
+if video_writer is not None:
+    video_writer.release()
+    print(f"✅ Video saved to: {VIDEO_OUTPUT_PATH}")
+    print(f"   Total frames: {frame_count}")
