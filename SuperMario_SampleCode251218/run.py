@@ -4,6 +4,7 @@ import random
 import torch
 import torch.nn as nn
 import cv2
+import time
 from tqdm import tqdm
 
 import gym_super_mario_bros                                      #導入gym_super_mario_bros，這是一個基於 Gym 的模組，用於模擬《Super Mario Bros》遊戲環境。
@@ -41,22 +42,23 @@ env = JoypadSpace(env, SIMPLE_MOVEMENT)
 print("Final env:", env)
 
 #========= basic train config==============================================
-LR = 0.00025                    # 學習率（DQN 經典值）
+LR = 0.005                    
 BATCH_SIZE = 64                 # 批次大小
-GAMMA = 0.99                    # ⚡ 提高！更重視長期獎勵（學會跳過敵人）
+GAMMA = 0.99                    # 提高！更重視長期獎勵（學會跳過敵人）
 MEMORY_SIZE = 50000             # 記憶體大小
-EPSILON_START = 1.0             # ⚡ 新增：初始探索率 100%
-EPSILON_END = 0.1               # ⚡ 降低：最終探索率 10%
-EPSILON_DECAY = 0.995           # ⚡ 新增：每回合探索率衰減
+EPSILON_START = 1.0             # 新增：初始探索率 100%
+EPSILON_END = 0.1               # 降低：最終探索率 10%
+EPSILON_DECAY = 0.995           # 新增：每回合探索率衰減
 TARGET_UPDATE = 100             # 目標網路更新頻率
-TOTAL_TIMESTEPS = 2000          # ⚡ 增加訓練回合
-VISUALIZE = False               # 是否渲染遊戲畫面
+TOTAL_TIMESTEPS = 2000          # 增加訓練回合
+VISUALIZE = True               # 是否渲染遊戲畫面
 MAX_STAGNATION_STEPS = 300      # 停滯步數上限
 device = torch.device("cuda")
 
-# ⚡ 加速訓練設定
-FRAME_SKIP = 2                  # ⚡ 降低！讓 Mario 有更多反應時間跳過敵人
+# 加速訓練設定
+FRAME_SKIP = 2                  # 讓 Mario 有更多反應時間跳過敵人
 TRAIN_FREQUENCY = 4             # 每 N 步訓練一次
+RENDER_DELAY = 0.02             # 渲染延遲（秒），設 0 = 最快，0.02 = 正常速度，0.05 = 慢速
 
 
 
@@ -72,16 +74,35 @@ dqn = DQN(                                      #初始化 DQN agent
     action_dim=n_actions,                       #動作空間大小
     learning_rate=LR,                           #學習率
     gamma=GAMMA,                                #折扣因子，用於計算未來獎勵
-    epsilon=EPSILON_START,                      # ⚡ 使用初始探索率 1.0
+    epsilon=EPSILON_START,                      # 使用初始探索率 1.0
     target_update=TARGET_UPDATE,                #目標網路更新頻率
     device=device
 )
+
+# ========== 載入預訓練權重 ==========
+LOAD_PRETRAINED = True  # 設為 True 載入預訓練模型，False 從頭訓練
+PRETRAINED_MODEL_PATH = os.path.join("liang_test_extreme", "step_1368_reward_106766.pth")
+
+if LOAD_PRETRAINED and os.path.exists(PRETRAINED_MODEL_PATH):
+    dqn.q_net.load_state_dict(torch.load(PRETRAINED_MODEL_PATH, map_location=device))
+    dqn.tgt_q_net.load_state_dict(torch.load(PRETRAINED_MODEL_PATH, map_location=device))
+    print(f"✅ Loaded pretrained model from: {PRETRAINED_MODEL_PATH}")
+    
+    # 載入預訓練模型時，降低探索率
+    EPSILON_START = 0.3  # 從 30% 探索開始（因為已有經驗）
+    current_epsilon = EPSILON_START
+    dqn.epsilon = current_epsilon
+    TOTAL_TIMESTEPS = 10
+else:
+    if LOAD_PRETRAINED:
+        print(f"⚠️ Pretrained model not found: {PRETRAINED_MODEL_PATH}")
+    print("🔄 Training from scratch")
 
 memory = ReplayMemory(MEMORY_SIZE)              #創建經驗回放記憶體，用於存儲狀態轉移
 step = 0                                        #記錄總步數
 best_reward = -float('inf')                     # 儲存最佳累積獎勵
 cumulative_reward = 0                           # 當前時間步的總累積獎勵
-current_epsilon = EPSILON_START                 # ⚡ 追蹤當前探索率
+current_epsilon = EPSILON_START                 # 追蹤當前探索率
 
 
 
@@ -161,6 +182,7 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
 
         if VISUALIZE:                                   #渲染當前遊戲畫面
             env.render()
+            time.sleep(RENDER_DELAY)                    # 延遲控制速度
 
     # ⚡ Epsilon Decay: 每回合結束後降低探索率
     current_epsilon = max(EPSILON_END, current_epsilon * EPSILON_DECAY)

@@ -15,8 +15,8 @@ from DQN import DQN
 
 # ========== Config ===========
 # 選擇最佳模型
-# MODEL_PATH = os.path.join("liang_test_extreme", "step_781_reward_48806.pth")
-MODEL_PATH = os.path.join("liang_test","step_366_reward_14087.pth")
+# MODEL_PATH = os.path.join("liang_test_extreme", "step_1368_reward_106766.pth")
+MODEL_PATH = os.path.join("liang_test","step_1417_reward_37291.pth")
 # MODEL_PATH = os.path.join("ckpt_test", "step_1_reward_-441.pth")   
 
 
