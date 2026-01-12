@@ -50,7 +50,7 @@ EPSILON_START = 1.0             # 新增：初始探索率 100%
 EPSILON_END = 0.1               # 降低：最終探索率 10%
 EPSILON_DECAY = 0.995           # 新增：每回合探索率衰減
 TARGET_UPDATE = 100             # 目標網路更新頻率
-TOTAL_TIMESTEPS = 2000          # 增加訓練回合
+TOTAL_TIMESTEPS = 10            # 訓練回合數（錄影設 10）
 VISUALIZE = True               # 是否渲染遊戲畫面
 MAX_STAGNATION_STEPS = 300      # 停滯步數上限
 device = torch.device("cuda")
@@ -59,6 +59,13 @@ device = torch.device("cuda")
 FRAME_SKIP = 2                  # 讓 Mario 有更多反應時間跳過敵人
 TRAIN_FREQUENCY = 4             # 每 N 步訓練一次
 RENDER_DELAY = 0.02             # 渲染延遲（秒），設 0 = 最快，0.02 = 正常速度，0.05 = 慢速
+
+# 影片錄製設定
+RECORD_VIDEO = True                                         # 是否錄製影片
+VIDEO_FPS = 30                                              # 影片幀率
+VIDEO_DIR = "videos"                                        # 影片儲存目錄
+os.makedirs(VIDEO_DIR, exist_ok=True)                       # 建立目錄
+VIDEO_OUTPUT_PATH = os.path.join(VIDEO_DIR, f"mario_train_{'extreme' if EXTREME_MODE else 'normal'}.mp4")
 
 
 
@@ -104,6 +111,18 @@ best_reward = -float('inf')                     # 儲存最佳累積獎勵
 cumulative_reward = 0                           # 當前時間步的總累積獎勵
 current_epsilon = EPSILON_START                 # 追蹤當前探索率
 
+# ========== 初始化影片錄製 ===========
+video_writer = None
+total_video_frames = 0
+if RECORD_VIDEO:
+    # 取得遊戲畫面尺寸
+    sample_frame = env.reset()
+    height, width = sample_frame.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(VIDEO_OUTPUT_PATH, fourcc, VIDEO_FPS, (width, height))
+    print(f"🎬 錄製訓練影片: {VIDEO_OUTPUT_PATH}")
+    print(f"   解析度: {width}x{height}, FPS: {VIDEO_FPS}")
+
 
 
 
@@ -132,8 +151,10 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         
         # ⚡ Frame Skip: 重複執行同一動作 N 次，累積獎勵
         frame_reward = 0
+        raw_frame = None  # 儲存原始畫面用於錄影
         for _ in range(FRAME_SKIP):
             next_state, reward, done, info = env.step(action)
+            raw_frame = next_state.copy()  # 保存原始 RGB 畫面
             frame_reward += reward
             if done:
                 break
@@ -183,6 +204,12 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
         if VISUALIZE:                                   #渲染當前遊戲畫面
             env.render()
             time.sleep(RENDER_DELAY)                    # 延遲控制速度
+        
+        # 錄製影片幀
+        if RECORD_VIDEO and video_writer is not None and raw_frame is not None:
+            frame_rgb = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2BGR)
+            video_writer.write(frame_rgb)
+            total_video_frames += 1
 
     # ⚡ Epsilon Decay: 每回合結束後降低探索率
     current_epsilon = max(EPSILON_END, current_epsilon * EPSILON_DECAY)
@@ -208,3 +235,10 @@ for timestep in tqdm(range(1, TOTAL_TIMESTEPS + 1), desc="Training Progress"):  
             print(f"Model saved: {model_path}")
 
 env.close()
+
+# ========== 關閉影片錄製 ===========
+if video_writer is not None:
+    video_writer.release()
+    print(f"✅ 訓練影片已儲存: {VIDEO_OUTPUT_PATH}")
+    print(f"   總幀數: {total_video_frames}")
+

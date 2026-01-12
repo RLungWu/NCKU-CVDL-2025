@@ -11,7 +11,7 @@ import cv2
 # ===============================================================
 
 # 切換模式：True = 極端模式, False = 正常模式
-EXTREME_MODE = True
+EXTREME_MODE = False
 
 # ===== 正常模式 (Normal Mode) - 快速通關優化版 =====
 # 設計原則：
